@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import requests
@@ -44,16 +45,32 @@ Requirements:
 - Each scene voiceover must make sense when read aloud.
 """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-    response = requests.post(
-        url,
-        headers={"Content-Type": "application/json", "X-goog-api-key": API_KEY},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json"}
-        },
-        timeout=90,
-    )
-    response.raise_for_status()
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json"}
+    }
+    headers = {"Content-Type": "application/json", "X-goog-api-key": API_KEY}
+    retryable_statuses = {429, 500, 502, 503, 504}
+    response = None
+    for attempt in range(5):
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=90)
+            if response.status_code in retryable_statuses:
+                if attempt == 4:
+                    response.raise_for_status()
+                wait_seconds = min(60, 8 * (2 ** attempt))
+                print(f"Gemini is temporarily unavailable (HTTP {response.status_code}). Retrying in {wait_seconds}s...")
+                time.sleep(wait_seconds)
+                continue
+            response.raise_for_status()
+            break
+        except requests.exceptions.RequestException as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if attempt == 4 or (status is not None and status not in retryable_statuses):
+                raise
+            wait_seconds = min(60, 8 * (2 ** attempt))
+            print(f"Gemini request failed ({status or type(exc).__name__}). Retrying in {wait_seconds}s...")
+            time.sleep(wait_seconds)
     data = response.json()
     raw = data["candidates"][0]["content"]["parts"][0]["text"]
     result = json.loads(raw)
@@ -89,15 +106,12 @@ def wrap_text(draw, text, selected_font, max_width):
     return lines
 
 def make_scene_image(screen_text, index, total):
-    image = Image.new("RGB", (W, H), (10, 14, 32))
-    pixels = image.load()
-    top = (12 + index * 7, 20, 48 + index * 9)
-    bottom = (36, 18 + index * 5, 66 + index * 4)
-    for y in range(H):
-        t = y / H
-        color = tuple(int(top[c] * (1 - t) + bottom[c] * t) for c in range(3))
-        for x in range(W):
-            pixels[x, y] = color
+    top = np.array((12 + index * 7, 20, 48 + index * 9), dtype=np.float32)
+    bottom = np.array((36, 18 + index * 5, 66 + index * 4), dtype=np.float32)
+    blend = np.linspace(0, 1, H, dtype=np.float32)[:, None, None]
+    rows = (top[None, None, :] * (1 - blend) + bottom[None, None, :] * blend).astype(np.uint8)
+    pixels = np.repeat(rows, W, axis=1)
+    image = Image.fromarray(pixels, "RGB")
 
     draw = ImageDraw.Draw(image, "RGBA")
     draw.ellipse((760, 180, 1220, 640), fill=(40, 180, 220, 32))
