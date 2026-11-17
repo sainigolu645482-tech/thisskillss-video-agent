@@ -80,6 +80,22 @@ Requirements:
     result["scenes"] = scenes[:6]
     return result
 
+def fallback_script():
+    """A ready-to-use Hindi script when Gemini is unavailable."""
+    return {
+        "title": "Claude Code के 3 कमाल के फीचर्स",
+        "description": "Claude Code से coding के काम आसान हो सकते हैं। जानिए इसके तीन उपयोगी फीचर्स।",
+        "hashtags": ["#ClaudeCode", "#AI", "#HindiTech", "#Thisskillss"],
+        "scenes": [
+            {"screen_text": "Claude Code के 3 फीचर्स", "voiceover": "सोचो, तुम अपने कोड एडिटर में बस बोलो कि ये फीचर बना दो, और Claude Code तुम्हारे प्रोजेक्ट में काम शुरू कर दे।"},
+            {"screen_text": "1. पूरा प्रोजेक्ट समझे", "voiceover": "पहला फीचर है प्रोजेक्ट को समझना। ये फाइलें पढ़कर तुम्हें बताता है कि कोड कहाँ है और कौन-सी चीज़ किससे जुड़ी है।"},
+            {"screen_text": "2. कई फाइलों में बदलाव", "voiceover": "दूसरा, ये एक साथ कई फाइलों में बदलाव कर सकता है, इसलिए बार-बार कॉपी पेस्ट करने की जरूरत कम होती है।"},
+            {"screen_text": "3. टेस्ट और डिबगिंग", "voiceover": "तीसरा, ये टेस्ट चला सकता है, गलती ढूँढने में मदद करता है और सुधार के सुझाव देता है।"},
+            {"screen_text": "बदलाव खुद चेक करो", "voiceover": "लेकिन ध्यान रहे, बदलाव सेव करने से पहले खुद चेक करो और जरूरी फाइलों का बैकअप रखो।"},
+            {"screen_text": "Follow Thisskillss", "voiceover": "ऐसे ही आसान AI और coding tutorials के लिए Thisskillss को subscribe कर लो।"}
+        ]
+    }
+
 def font(size, bold=False):
     candidates = [
         "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
@@ -145,7 +161,12 @@ async def make_voice(text, path):
 
 def main():
     print(f"Generating a Short about: {TOPIC}")
-    script = ask_gemini()
+    try:
+        script = ask_gemini()
+        print("Gemini script generated successfully.")
+    except Exception as exc:
+        print(f"Gemini unavailable ({type(exc).__name__}: {exc}). Using the built-in backup Hindi script.")
+        script = fallback_script()
     scenes = script["scenes"]
     audio_paths = []
     audio_clips = []
