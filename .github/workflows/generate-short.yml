@@ -1,0 +1,47 @@
+name: Generate Thisskillss Short
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Short ka topic (Hindi/English)"
+        required: false
+        default: "Claude Code ke 3 powerful features"
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system tools and Hindi fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Generate video
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIDEO_TOPIC: ${{ inputs.topic }}
+        run: python generate.py
+
+      - name: Upload generated Short
+        uses: actions/upload-artifact@v4
+        with:
+          name: thisskillss-short
+          path: output/
+          retention-days: 7
