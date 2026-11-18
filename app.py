@@ -214,7 +214,6 @@ if (video or video_url.strip()) and st.button("✨  Generate engaging Shorts",ty
                 raise RuntimeError("YouTube se video file nahi mili. Link public hai ya nahi check karo.")
             src=max(candidates,key=lambda p:p.stat().st_size)
         duration,w,h=probe(src)
-        duration,w,h=probe(src)
         if duration<10: raise RuntimeError("Kam se kam 10 second ki video chahiye.")
         client=genai.Client(api_key=key)
         with st.spinner("Gemini video analyze kar raha hai..."):
