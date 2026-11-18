@@ -39,22 +39,32 @@ if not key:
     st.error("GEMINI_API_KEY missing hai. Secrets mein add karo.")
     st.stop()
 
-def generate_with_retry(client, model, contents, config, attempts=4):
-    """Retry temporary Gemini overloads with exponential backoff."""
-    for attempt in range(attempts):
-        try:
-            return client.models.generate_content(
-                model=model, contents=contents, config=config
-            )
-        except Exception as err:
-            message=str(err).upper()
-            temporary=("503" in message or "UNAVAILABLE" in message or
-                       "SERVICE UNAVAILABLE" in message)
-            if not temporary or attempt == attempts-1:
-                raise
-            wait=5*(2**attempt)
-            st.warning(f"Gemini server busy hai. {wait} second baad automatic retry ({attempt+2}/{attempts})...")
-            time.sleep(wait)
+def generate_with_retry(client, model, contents, config, attempts=3):
+    """Retry Gemini 503s, then switch to a lighter backup model."""
+    models=[model]
+    if model != "gemini-3.5-flash-lite":
+        models.append("gemini-3.5-flash-lite")
+    last_error=None
+    for model_index, candidate in enumerate(models):
+        for attempt in range(attempts):
+            try:
+                return client.models.generate_content(
+                    model=candidate, contents=contents, config=config
+                )
+            except Exception as err:
+                last_error=err
+                message=str(err).upper()
+                temporary=("503" in message or "UNAVAILABLE" in message or
+                           "SERVICE UNAVAILABLE" in message)
+                if not temporary:
+                    raise
+                if attempt < attempts-1:
+                    wait=5*(2**attempt)
+                    st.warning(f"Gemini server busy hai. {wait} second baad retry ({attempt+2}/{attempts})...")
+                    time.sleep(wait)
+                elif model_index < len(models)-1:
+                    st.warning("Primary Gemini model busy hai. Ab backup model Gemini 3.5 Flash-Lite try kar rahe hain...")
+    raise last_error
 
 def run(args):
     p=subprocess.run(args,capture_output=True,text=True)
