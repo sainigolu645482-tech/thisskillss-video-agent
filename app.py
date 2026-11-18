@@ -39,32 +39,58 @@ if not key:
     st.error("GEMINI_API_KEY missing hai. Secrets mein add karo.")
     st.stop()
 
-def generate_with_retry(client, model, contents, config, attempts=3):
-    """Retry Gemini 503s, then switch to a lighter backup model."""
-    models=[model]
-    if model != "gemini-3.5-flash-lite":
-        models.append("gemini-3.5-flash-lite")
-    last_error=None
-    for model_index, candidate in enumerate(models):
+def generate_with_retry(client, model, contents, config, attempts=2):
+    """Try current Gemini models in order and retry transient server/quota errors."""
+    candidates = []
+    for name in (model, "gemini-3.8-flash", "gemini-3.5-flash-lite"):
+        name = (name or "").strip()
+        if name and name not in candidates:
+            candidates.append(name)
+
+    failures = []
+    for model_index, candidate in enumerate(candidates):
         for attempt in range(attempts):
             try:
+                st.info(f"Gemini model try ho raha hai: {candidate}")
                 return client.models.generate_content(
                     model=candidate, contents=contents, config=config
                 )
             except Exception as err:
-                last_error=err
-                message=str(err).upper()
-                temporary=("503" in message or "UNAVAILABLE" in message or
-                           "SERVICE UNAVAILABLE" in message)
-                if not temporary:
+                message = str(err)
+                upper = message.upper()
+                retryable = any(code in upper for code in (
+                    "429", "500", "502", "503", "504",
+                    "RESOURCE_EXHAUSTED", "UNAVAILABLE",
+                    "INTERNAL", "DEADLINE_EXCEEDED",
+                    "SERVICE UNAVAILABLE", "TIMEOUT"
+                ))
+                model_missing = ("404" in upper or "NOT_FOUND" in upper or
+                                 "MODEL" in upper and "NOT FOUND" in upper)
+                failures.append(f"{candidate}: {message[-500:]}")
+                if not retryable and not model_missing:
                     raise
-                if attempt < attempts-1:
-                    wait=5*(2**attempt)
-                    st.warning(f"Gemini server busy hai. {wait} second baad retry ({attempt+2}/{attempts})...")
+                if retryable and attempt < attempts - 1:
+                    wait = 5 * (2 ** attempt)
+                    st.warning(
+                        f"{candidate} abhi busy/limited hai. {wait} second baad "
+                        f"dobara try kar rahe hain..."
+                    )
                     time.sleep(wait)
-                elif model_index < len(models)-1:
-                    st.warning("Primary Gemini model busy hai. Ab backup model Gemini 3.5 Flash-Lite try kar rahe hain...")
-    raise last_error
+                    continue
+                if model_index < len(candidates) - 1:
+                    st.warning(
+                        f"{candidate} available nahi hai. Ab next backup model "
+                        f"try kar rahe hain..."
+                    )
+                break
+
+    details = "\\n".join(failures[-3:])
+    raise RuntimeError(
+        "Gemini ke sabhi available models se response nahi mila. "
+        "Agar 503/UNAVAILABLE aa raha hai to Google server busy hai; "
+        "thodi der baad dobara try karo. Agar 429/RESOURCE_EXHAUSTED hai "
+        "to Gemini API quota/billing limit check karo. Details:\\n" + details
+    )
 
 def run(args):
     p=subprocess.run(args,capture_output=True,text=True)
