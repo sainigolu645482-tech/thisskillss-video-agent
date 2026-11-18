@@ -63,7 +63,14 @@ def export(src,out,c,size,stack,share,burn,folder,n):
         if has:
             sp=str(srt).replace("\\","/").replace(":","\\:")
             vf+=f",subtitles='{sp}':force_style='FontName=Arial,FontSize=18,Outline=2,Alignment=2,MarginV=50'"
-        args=["ffmpeg","-y","-ss",str(c["start"]),"-i",str(src),"-t",str(length),"-vf",vf]
+        if has:
+            vf += ";[0:v]null[vunused]"
+        # The blur background and foreground require a multi-input filter graph.
+        if has:
+            graph=vf.replace(",subtitles=", ";[v]subtitles=") + "[vout]"
+        else:
+            graph=vf + "[vout]"
+        args=["ffmpeg","-y","-ss",str(c["start"]),"-i",str(src),"-t",str(length),"-filter_complex",graph,"-map","[vout]","-map","0:a?"]
     run(args+["-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-movflags","+faststart",str(out)])
 
 with st.sidebar:
