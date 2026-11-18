@@ -5,8 +5,32 @@ from google import genai
 from google.genai import types
 
 st.set_page_config(page_title="ThisSkills AutoClips AI", page_icon="✂️", layout="wide")
-st.title("✂️ ThisSkills AutoClips AI")
-st.caption("Long video se original engaging moments ko Shorts mein badlo.")
+st.markdown("""
+<style>
+.stApp {background: radial-gradient(ellipse at 50% -15%, #30205a 0%, #11101b 42%, #09090f 100%); color:#f7f4ff;}
+[data-testid="stHeader"] {background:transparent;}
+.block-container {max-width:1120px; padding-top:2rem; padding-bottom:3rem;}
+.hero {padding:30px 28px; border:1px solid #493778; border-radius:22px; background:linear-gradient(120deg,rgba(91,55,163,.32),rgba(24,22,39,.92)); box-shadow:0 16px 50px rgba(0,0,0,.28); margin-bottom:24px;}
+.eyebrow {color:#c4a7ff; font-size:12px; letter-spacing:2px; font-weight:800; text-transform:uppercase;}
+.hero h1 {font-size:clamp(28px,5vw,44px); line-height:1.1; margin:10px 0 8px; color:#fff;}
+.hero p {color:#c9c2dc; font-size:16px; margin:0;}
+.section-title {font-size:20px; font-weight:750; color:#fff; margin:18px 0 8px;}
+.upload-hint {border:1px dashed #7657bd; border-radius:18px; padding:18px; background:rgba(87,59,145,.12); color:#d9d0ed; text-align:center; margin:8px 0 14px;}
+div[data-testid="stFileUploader"] {background:rgba(255,255,255,.035); border:1px solid #42365e; border-radius:16px; padding:14px;}
+div.stButton > button[kind="primary"], div.stDownloadButton > button {background:linear-gradient(90deg,#8055e8,#b14be7); color:white; border:0; border-radius:13px; min-height:48px; font-weight:750; box-shadow:0 7px 22px rgba(128,85,232,.22);}
+div.stButton > button[kind="primary"]:hover, div.stDownloadButton > button:hover {border:1px solid #d8c4ff; color:white;}
+[data-testid="stSidebar"] {background:#100e1b; border-right:1px solid #33264d;}
+[data-testid="stSidebar"] h2 {color:#d7c5ff;}
+[data-testid="stMetric"] {background:#211a32; border:1px solid #463365; padding:14px; border-radius:14px;}
+.stAlert {border-radius:14px;}
+hr {border-color:#34294b;}
+</style>
+<div class="hero">
+  <div class="eyebrow">AI-powered video clipping studio</div>
+  <h1>✂️ ThisSkills AutoClips AI</h1>
+  <p>Long videos ke sabse engaging moments ko original audio ke saath ready-to-post Shorts mein badlo.</p>
+</div>
+""", unsafe_allow_html=True)
 key=os.getenv("GEMINI_API_KEY","").strip()
 if not key:
     try: key=st.secrets.get("GEMINI_API_KEY","").strip()
@@ -74,14 +98,19 @@ def export(src,out,c,size,stack,share,burn,folder,n):
     run(args+["-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-movflags","+faststart",str(out)])
 
 with st.sidebar:
-    st.header("Shorts settings")
+    st.header("⚙️ Shorts settings")
+    st.caption("Apne Shorts ka look choose karo.")
     layout=st.radio("Layout",["Auto 9:16","Facecam upar + gameplay niche"])
     share=st.slider("Facecam ka screen hissa",40,70,55,5)
     burn=st.checkbox("Subtitles video par lagao",True)
 
-video=st.file_uploader("Original long video upload karo",type=["mp4","mov","mkv","webm"])
-st.caption("Apni ya permission wali video upload karo. YouTube URL downloading abhi enabled nahi hai.")
-if video and st.button("Engaging moments dhoondo aur Shorts banao",type="primary",use_container_width=True):
+st.markdown('<div class="section-title">🎬 1. Apni long video upload karo</div>', unsafe_allow_html=True)
+st.markdown('<div class="upload-hint">⬆️ Video yahan upload karo<br><small>MP4 · MOV · MKV · WEBM | Apni ya permission wali video use karo</small></div>', unsafe_allow_html=True)
+video=st.file_uploader("Video select karo",type=["mp4","mov","mkv","webm"],label_visibility="collapsed")
+if video:
+    st.success(f"Video ready: {video.name} · {video.size / (1024*1024):.1f} MB")
+st.caption("YouTube URL downloading abhi enabled nahi hai.")
+if video and st.button("✨  Generate engaging Shorts",type="primary",use_container_width=True):
     folder=Path(tempfile.mkdtemp()); client=None; remote=None
     try:
         src=folder/(Path(video.name).stem+(Path(video.name).suffix or ".mp4")); src.write_bytes(video.getvalue())
@@ -126,13 +155,15 @@ Video duration {duration:.2f} seconds.
         archive=folder/"ThisSkills_AutoClips.zip"
         with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as z:
             for out,c in results: z.write(out,out.name)
-        st.success(f"{len(results)} Shorts ready!")
+        st.success(f"🎉 {len(results)} Shorts ready!")
+        st.markdown('<div class="section-title">📱 2. Your ready Shorts</div>', unsafe_allow_html=True)
         st.download_button("Saare Shorts ZIP mein download karo",archive.read_bytes(),file_name="ThisSkills_AutoClips.zip",mime="application/zip",type="primary")
         for i,(out,c) in enumerate(results,1):
-            st.subheader(f"Short {i} · {c['end']-c['start']:.1f} sec")
-            st.caption(str(c.get("reason",""))+" · "+str(c.get("hook","")))
-            st.video(str(out))
-            st.download_button(f"Download Short {i}",out.read_bytes(),file_name=out.name,mime="video/mp4",key=f"dl{i}")
+            with st.container(border=True):
+                st.subheader(f"🎞️ Short {i} · {c['end']-c['start']:.1f} sec")
+                st.caption(str(c.get("reason",""))+" · "+str(c.get("hook","")))
+                st.video(str(out))
+                st.download_button(f"⬇️ Download Short {i}",out.read_bytes(),file_name=out.name,mime="video/mp4",key=f"dl{i}")
     except Exception as e:
         st.error(f"Processing error: {e}")
         st.caption("Gemini API quota/key, FFmpeg, video size aur internet check karo.")
