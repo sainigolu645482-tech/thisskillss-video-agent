@@ -163,9 +163,16 @@ if (video or video_url.strip()) and st.button("✨  Generate engaging Shorts",ty
                        "retries":3,"extractor_retries":3,"fragment_retries":3,
                        "js_runtimes":{"deno":{}}}
             download_error=None
-            for fmt in ("bv*[height<=1080]+ba/b[height<=1080]/best", "best"):
+            download_attempts=[
+                # YouTube's web_safari client can expose HLS formats that avoid
+                # some of the newer GVS PO-token restrictions.
+                {"format":"best","extractor_args":{"youtube":{"player_client":["web_safari"]}}},
+                {"format":"bv*[height<=1080]+ba/b[height<=1080]/best"},
+                {"format":"best"},
+            ]
+            for attempt_opts in download_attempts:
                 try:
-                    with YoutubeDL({**base_opts,"format":fmt}) as ydl:
+                    with YoutubeDL({**base_opts,**attempt_opts}) as ydl:
                         ydl.download([video_url.strip()])
                     download_error=None
                     break
