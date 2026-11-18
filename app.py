@@ -59,17 +59,14 @@ def export(src,out,c,size,stack,share,burn,folder,n):
         else: graph+=";[v]null[out]"
         args=["ffmpeg","-y","-ss",str(c["start"]),"-i",str(src),"-t",str(length),"-filter_complex",graph,"-map","[out]","-map","0:a?"]
     else:
-        vf="split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=22:10[blur];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[front];[blur][front]overlay=(W-w)/2:(H-h)/2"
+        graph=("[0:v]split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+               "crop=1080:1920,boxblur=22:10[blur];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[front];"
+               "[blur][front]overlay=(W-w)/2:(H-h)/2[v]")
         if has:
             sp=str(srt).replace("\\","/").replace(":","\\:")
-            vf+=f",subtitles='{sp}':force_style='FontName=Arial,FontSize=18,Outline=2,Alignment=2,MarginV=50'"
-        if has:
-            vf += ";[0:v]null[vunused]"
-        # The blur background and foreground require a multi-input filter graph.
-        if has:
-            graph=vf.replace(",subtitles=", ";[v]subtitles=") + "[vout]"
+            graph+=f";[v]subtitles='{sp}':force_style='FontName=Arial,FontSize=18,Outline=2,Alignment=2,MarginV=50'[vout]"
         else:
-            graph=vf + "[vout]"
+            graph+=";[v]null[vout]"
         args=["ffmpeg","-y","-ss",str(c["start"]),"-i",str(src),"-t",str(length),"-filter_complex",graph,"-map","[vout]","-map","0:a?"]
     run(args+["-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-movflags","+faststart",str(out)])
 
