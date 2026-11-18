@@ -84,7 +84,7 @@ def generate_with_retry(client, model, contents, config, attempts=2):
                     )
                 break
 
-    details = "\\n".join(failures[-3:])
+    details = "\n".join(failures[-3:])
     raise RuntimeError(
         "Gemini ke sabhi available models se response nahi mila. "
         "Agar 503/UNAVAILABLE aa raha hai to Google server busy hai; "
