@@ -39,6 +39,23 @@ if not key:
     st.error("GEMINI_API_KEY missing hai. Secrets mein add karo.")
     st.stop()
 
+def generate_with_retry(client, model, contents, config, attempts=4):
+    """Retry temporary Gemini overloads with exponential backoff."""
+    for attempt in range(attempts):
+        try:
+            return client.models.generate_content(
+                model=model, contents=contents, config=config
+            )
+        except Exception as err:
+            message=str(err).upper()
+            temporary=("503" in message or "UNAVAILABLE" in message or
+                       "SERVICE UNAVAILABLE" in message)
+            if not temporary or attempt == attempts-1:
+                raise
+            wait=5*(2**attempt)
+            st.warning(f"Gemini server busy hai. {wait} second baad automatic retry ({attempt+2}/{attempts})...")
+            time.sleep(wait)
+
 def run(args):
     p=subprocess.run(args,capture_output=True,text=True)
     if p.returncode: raise RuntimeError((p.stderr or p.stdout)[-1500:])
@@ -176,8 +193,12 @@ Return JSON only:
 Clip start/end are absolute source seconds. Captions are relative seconds. Do not invent timestamps.
 Video duration {duration:.2f} seconds.
 """
-            response=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-3.8-flash"),
-                contents=[remote,prompt],config=types.GenerateContentConfig(response_mime_type="application/json",temperature=.2))
+            response=generate_with_retry(
+                client,
+                os.getenv("GEMINI_MODEL","gemini-3.8-flash"),
+                [remote,prompt],
+                types.GenerateContentConfig(response_mime_type="application/json",temperature=.2)
+            )
             data=json.loads(response.text)
         clips=[]
         for c in data.get("clips",[]):
