@@ -7,7 +7,10 @@ from google.genai import types
 st.set_page_config(page_title="ThisSkills AutoClips AI", page_icon="✂️", layout="wide")
 st.title("✂️ ThisSkills AutoClips AI")
 st.caption("Long video se original engaging moments ko Shorts mein badlo.")
-key=(os.getenv("GEMINI_API_KEY","") or st.secrets.get("GEMINI_API_KEY","")).strip()
+key=os.getenv("GEMINI_API_KEY","").strip()
+if not key:
+    try: key=st.secrets.get("GEMINI_API_KEY","").strip()
+    except Exception: key=""
 if not key:
     st.error("GEMINI_API_KEY missing hai. Secrets mein add karo.")
     st.stop()
