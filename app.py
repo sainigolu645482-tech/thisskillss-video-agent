@@ -104,15 +104,39 @@ with st.sidebar:
     share=st.slider("Facecam ka screen hissa",40,70,55,5)
     burn=st.checkbox("Subtitles video par lagao",True)
 
-st.markdown('<div class="section-title">🎬 1. Apni long video upload karo</div>', unsafe_allow_html=True)
-video=st.file_uploader("⬆️ Video yahan upload karo · MP4, MOV, MKV, WEBM",type=["mp4","mov","mkv","webm"])
+st.markdown('<div class="section-title">🎬 1. Apni long video choose karo</div>', unsafe_allow_html=True)
+st.markdown("**YouTube link paste karo**")
+video_url=st.text_input("YouTube video URL",placeholder="https://www.youtube.com/watch?v=...")
+st.caption("Ya phir neeche phone se video upload karo.")
+video=st.file_uploader("⬆️ Video upload karo · MP4, MOV, MKV, WEBM",type=["mp4","mov","mkv","webm"])
 if video:
-    st.success(f"Video ready: {video.name} · {video.size / (1024*1024):.1f} MB")
-st.caption("YouTube URL downloading abhi enabled nahi hai.")
-if video and st.button("✨  Generate engaging Shorts",type="primary",use_container_width=True):
+    st.success(f"Uploaded: {video.name} · {video.size / (1024*1024):.1f} MB")
+if video_url.strip():
+    st.info("YouTube link ready hai. Public video ya aisa video use karo jise download karne ki permission tumhare paas ho.")
+if (video or video_url.strip()) and st.button("✨  Generate engaging Shorts",type="primary",use_container_width=True):
     folder=Path(tempfile.mkdtemp()); client=None; remote=None
     try:
-        src=folder/(Path(video.name).stem+(Path(video.name).suffix or ".mp4")); src.write_bytes(video.getvalue())
+        if video:
+            src=folder/(Path(video.name).stem+(Path(video.name).suffix or ".mp4"))
+            src.write_bytes(video.getvalue())
+        else:
+            from urllib.parse import urlparse
+            from yt_dlp import YoutubeDL
+            parsed=urlparse(video_url.strip())
+            host=(parsed.hostname or "").lower()
+            allowed=host in {"youtube.com","www.youtube.com","m.youtube.com","youtu.be","www.youtu.be"}
+            if parsed.scheme not in {"http","https"} or not allowed:
+                raise RuntimeError("Abhi sirf valid YouTube ya youtu.be link supported hai.")
+            st.info("YouTube video download ho rahi hai... thoda wait karo.")
+            opts={"format":"best[height<=1080]/best","outtmpl":str(folder/"source.%(ext)s"),
+                  "merge_output_format":"mp4","noplaylist":True,"quiet":True,"no_warnings":True}
+            with YoutubeDL(opts) as ydl:
+                ydl.download([video_url.strip()])
+            candidates=[p for p in folder.glob("source.*") if p.suffix.lower() in {".mp4",".mkv",".webm",".mov"}]
+            if not candidates:
+                raise RuntimeError("YouTube se video file nahi mili. Link public hai ya nahi check karo.")
+            src=max(candidates,key=lambda p:p.stat().st_size)
+        duration,w,h=probe(src)
         duration,w,h=probe(src)
         if duration<10: raise RuntimeError("Kam se kam 10 second ki video chahiye.")
         client=genai.Client(api_key=key)
