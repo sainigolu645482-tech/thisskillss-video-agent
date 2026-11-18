@@ -128,10 +128,26 @@ if (video or video_url.strip()) and st.button("✨  Generate engaging Shorts",ty
             if parsed.scheme not in {"http","https"} or not allowed:
                 raise RuntimeError("Abhi sirf valid YouTube ya youtu.be link supported hai.")
             st.info("YouTube video download ho rahi hai... thoda wait karo.")
-            opts={"format":"best[height<=1080]/best","outtmpl":str(folder/"source.%(ext)s"),
-                  "merge_output_format":"mp4","noplaylist":True,"quiet":True,"no_warnings":True}
-            with YoutubeDL(opts) as ydl:
-                ydl.download([video_url.strip()])
+            # Try a high-quality video+audio combination, then fall back to any
+            # single-file format available for this particular YouTube video.
+            base_opts={"outtmpl":str(folder/"source.%(ext)s"),
+                       "merge_output_format":"mp4","noplaylist":True,
+                       "quiet":True,"no_warnings":True,
+                       "retries":3,"extractor_retries":3,"fragment_retries":3}
+            download_error=None
+            for fmt in ("bv*[height<=1080]+ba/b[height<=1080]/best", "best"):
+                try:
+                    with YoutubeDL({**base_opts,"format":fmt}) as ydl:
+                        ydl.download([video_url.strip()])
+                    download_error=None
+                    break
+                except Exception as err:
+                    download_error=err
+                    for stale in folder.glob("source.*"):
+                        try: stale.unlink()
+                        except OSError: pass
+            if download_error:
+                raise RuntimeError("YouTube ke available formats download nahi ho paaye. Dusra public link try karo. Details: "+str(download_error)[-700:])
             candidates=[p for p in folder.glob("source.*") if p.suffix.lower() in {".mp4",".mkv",".webm",".mov"}]
             if not candidates:
                 raise RuntimeError("YouTube se video file nahi mili. Link public hai ya nahi check karo.")
