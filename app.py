@@ -105,8 +105,7 @@ with st.sidebar:
     burn=st.checkbox("Subtitles video par lagao",True)
 
 st.markdown('<div class="section-title">🎬 1. Apni long video upload karo</div>', unsafe_allow_html=True)
-st.markdown('<div class="upload-hint">⬆️ Video yahan upload karo<br><small>MP4 · MOV · MKV · WEBM | Apni ya permission wali video use karo</small></div>', unsafe_allow_html=True)
-video=st.file_uploader("Video select karo",type=["mp4","mov","mkv","webm"],label_visibility="collapsed")
+video=st.file_uploader("⬆️ Video yahan upload karo · MP4, MOV, MKV, WEBM",type=["mp4","mov","mkv","webm"])
 if video:
     st.success(f"Video ready: {video.name} · {video.size / (1024*1024):.1f} MB")
 st.caption("YouTube URL downloading abhi enabled nahi hai.")
