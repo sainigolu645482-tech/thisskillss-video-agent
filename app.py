@@ -135,7 +135,7 @@ Return JSON only:
 Clip start/end are absolute source seconds. Captions are relative seconds. Do not invent timestamps.
 Video duration {duration:.2f} seconds.
 """
-            response=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-2.5-flash"),
+            response=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-3.8-flash"),
                 contents=[remote,prompt],config=types.GenerateContentConfig(response_mime_type="application/json",temperature=.2))
             data=json.loads(response.text)
         clips=[]
