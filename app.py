@@ -133,7 +133,7 @@ if (video or video_url.strip()) and st.button("✨  Generate engaging Shorts",ty
             base_opts={"outtmpl":str(folder/"source.%(ext)s"),
                        "merge_output_format":"mp4","noplaylist":True,
                        "quiet":True,"no_warnings":True,
-                       "retries":3,"extractor_retries":3,"fragment_retries":3}
+                       "retries":3,"extractor_retries":3,"fragment_retries":3,\n                       "js_runtimes":{"deno":{}}}
             download_error=None
             for fmt in ("bv*[height<=1080]+ba/b[height<=1080]/best", "best"):
                 try:
