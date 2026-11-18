@@ -1,92 +1,139 @@
-import json
-import os
-import re
-import subprocess
-import tempfile
+import json, os, subprocess, tempfile, shutil, zipfile, time
 from pathlib import Path
-
 import streamlit as st
 from google import genai
 from google.genai import types
 
-st.set_page_config(page_title="ThisSkills AutoClips AI", page_icon="✂️", layout="centered")
+st.set_page_config(page_title="ThisSkills AutoClips AI", page_icon="✂️", layout="wide")
 st.title("✂️ ThisSkills AutoClips AI")
-st.caption("Upload a video. Gemini finds the strongest complete moments and turns them into Shorts.")
-
-api_key = os.getenv("GEMINI_API_KEY", "").strip()
-if not api_key:
-    st.error("GEMINI_API_KEY is not configured. Add it to your environment/secrets before running.")
+st.caption("Long video se original engaging moments ko Shorts mein badlo.")
+key=os.getenv("GEMINI_API_KEY","").strip()
+if not key:
+    st.error("GEMINI_API_KEY missing hai. Secrets mein add karo.")
     st.stop()
 
-uploaded = st.file_uploader("Upload your original video", type=["mp4", "mov", "mkv", "webm"])
-if uploaded:
-    st.video(uploaded)
-    if st.button("Find engaging moments and create Shorts", type="primary", use_container_width=True):
-        with st.spinner("Uploading video to Gemini and analyzing engaging moments..."):
-            try:
-                suffix = Path(uploaded.name).suffix or ".mp4"
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                    tmp.write(uploaded.getvalue())
-                    source_path = Path(tmp.name)
+def run(args):
+    p=subprocess.run(args,capture_output=True,text=True)
+    if p.returncode: raise RuntimeError((p.stderr or p.stdout)[-1500:])
+    return p.stdout.strip()
 
-                client = genai.Client(api_key=api_key)
-                gemini_file = client.files.upload(file=str(source_path))
-                while gemini_file.state.name == "PROCESSING":
-                    import time
-                    time.sleep(3)
-                    gemini_file = client.files.get(name=gemini_file.name)
-                if gemini_file.state.name == "FAILED":
-                    raise RuntimeError("Gemini could not process this video. Try MP4 or a smaller file.")
+def probe(path):
+    d=json.loads(run(["ffprobe","-v","error","-show_entries","format=duration:stream=width,height","-of","json",str(path)]))
+    v=next(s for s in d["streams"] if s.get("width") and s.get("height"))
+    return float(d["format"]["duration"]),int(v["width"]),int(v["height"])
 
-                prompt = """
-Analyze the entire uploaded video and identify ONLY genuinely engaging, self-contained moments
-that could work as YouTube Shorts. Do not force a fixed number of clips. Return as many strong
-moments as exist, and return an empty list if none are good. Each clip must be at most 60 seconds.
-Choose natural boundaries: preserve the complete thought, question-answer, joke, reveal, or story;
-never cut a sentence or important context. Avoid overlapping clips and near-duplicates.
-Return ONLY JSON:
-{"clips":[{"start":12.3,"end":47.8,"reason":"why this moment is engaging","hook":"short Hindi/English hook"}]}
-Times are seconds from the start of the source video. Be precise and do not invent timestamps.
+def box_filter(box,w,h):
+    if not isinstance(box,dict): return None
+    try:
+        x=max(0,min(1,float(box["x"]))); y=max(0,min(1,float(box["y"])))
+        bw=max(.05,min(1-x,float(box["w"]))); bh=max(.05,min(1-y,float(box["h"])))
+        cw=max(2,int(w*bw)//2*2); ch=max(2,int(h*bh)//2*2)
+        return f"crop={cw}:{ch}:{int(w*x)}:{int(h*y)}"
+    except (KeyError,ValueError,TypeError): return None
+
+def make_srt(captions,path,duration):
+    rows=[]
+    for n,c in enumerate(captions or [],1):
+        try:
+            a=max(0,int(float(c["start"])*1000)); b=min(int(duration*1000),int(float(c["end"])*1000))
+            if b<=a: continue
+            def stamp(v):
+                h,v=divmod(v,3600000); m,v=divmod(v,60000); s,ms=divmod(v,1000)
+                return f"{h:02}:{m:02}:{s:02},{ms:03}"
+            rows += [str(n),stamp(a)+" --> "+stamp(b),str(c["text"]).strip(),""]
+        except (KeyError,ValueError,TypeError): pass
+    if not rows: return False
+    path.write_text("\n".join(rows),encoding="utf-8"); return True
+
+def export(src,out,c,size,stack,share,burn,folder,n):
+    w,h=size; length=c["end"]-c["start"]; srt=folder/f"cap{n}.srt"
+    has=make_srt(c.get("captions",[]),srt,length) if burn else False
+    if stack:
+        cam=box_filter(c.get("facecam_bbox"),w,h); game=box_filter(c.get("gameplay_bbox"),w,h)
+        if not cam or not game: raise RuntimeError("Facecam/gameplay detect nahi hua. Auto 9:16 layout try karo.")
+        top=int(1920*share/100); low=1920-top
+        graph=f"[0:v]{cam},scale=1080:{top}:force_original_aspect_ratio=decrease,pad=1080:{top}:(ow-iw)/2:(oh-ih)/2:black[c];[0:v]{game},scale=1080:{low}:force_original_aspect_ratio=decrease,pad=1080:{low}:(ow-iw)/2:(oh-ih)/2:black[g];[c][g]vstack[v]"
+        if has:
+            sp=str(srt).replace("\\","/").replace(":","\\:")
+            graph+=f";[v]subtitles='{sp}':force_style='FontName=Arial,FontSize=18,Outline=2,Alignment=2,MarginV=50'[out]"
+        else: graph+=";[v]null[out]"
+        args=["ffmpeg","-y","-ss",str(c["start"]),"-i",str(src),"-t",str(length),"-filter_complex",graph,"-map","[out]","-map","0:a?"]
+    else:
+        vf="split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=22:10[blur];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[front];[blur][front]overlay=(W-w)/2:(H-h)/2"
+        if has:
+            sp=str(srt).replace("\\","/").replace(":","\\:")
+            vf+=f",subtitles='{sp}':force_style='FontName=Arial,FontSize=18,Outline=2,Alignment=2,MarginV=50'"
+        args=["ffmpeg","-y","-ss",str(c["start"]),"-i",str(src),"-t",str(length),"-vf",vf]
+    run(args+["-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-movflags","+faststart",str(out)])
+
+with st.sidebar:
+    st.header("Shorts settings")
+    layout=st.radio("Layout",["Auto 9:16","Facecam upar + gameplay niche"])
+    share=st.slider("Facecam ka screen hissa",40,70,55,5)
+    burn=st.checkbox("Subtitles video par lagao",True)
+
+video=st.file_uploader("Original long video upload karo",type=["mp4","mov","mkv","webm"])
+st.caption("Apni ya permission wali video upload karo. YouTube URL downloading abhi enabled nahi hai.")
+if video and st.button("Engaging moments dhoondo aur Shorts banao",type="primary",use_container_width=True):
+    folder=Path(tempfile.mkdtemp()); client=None; remote=None
+    try:
+        src=folder/(Path(video.name).stem+(Path(video.name).suffix or ".mp4")); src.write_bytes(video.getvalue())
+        duration,w,h=probe(src)
+        if duration<10: raise RuntimeError("Kam se kam 10 second ki video chahiye.")
+        client=genai.Client(api_key=key)
+        with st.spinner("Gemini video analyze kar raha hai..."):
+            remote=client.files.upload(file=str(src))
+            while getattr(remote.state,"name",str(remote.state))=="PROCESSING":
+                time.sleep(3); remote=client.files.get(name=remote.name)
+            if getattr(remote.state,"name",str(remote.state))=="FAILED": raise RuntimeError("Gemini video process nahi kar paya.")
+            prompt=f"""
+Find only strong, self-contained engaging moments from this whole video. Do not force a count.
+Each clip must be 8-60 seconds. Preserve full sentences, jokes, reactions and context; no mid-sentence cuts.
+Return spoken subtitle chunks with accurate timestamps relative to each clip start.
+For gaming streams with separate facecam and gameplay panels, return normalized source-frame rectangles
+facecam_bbox and gameplay_bbox as x,y,w,h between 0 and 1. If unsure or not a stream, set both null.
+Return JSON only:
+{{"clips":[{{"start":12.3,"end":47.8,"reason":"why engaging","hook":"short hook",
+"captions":[{{"start":0,"end":2.5,"text":"spoken words"}}],
+"facecam_bbox":{{"x":0.1,"y":0,"w":0.4,"h":0.3}},
+"gameplay_bbox":{{"x":0,"y":0.3,"w":1,"h":0.7}}}}]}}
+Clip start/end are absolute source seconds. Captions are relative seconds. Do not invent timestamps.
+Video duration {duration:.2f} seconds.
 """
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[gemini_file, prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2),
-                )
-                data = json.loads(response.text)
-                clips = data.get("clips", [])
-                duration = float(subprocess.check_output(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                     "-of", "default=noprint_wrappers=1:nokey=1", str(source_path)], text=True
-                ).strip())
-                valid = []
-                for clip in clips:
-                    start, end = float(clip["start"]), float(clip["end"])
-                    if 0 <= start < end <= duration and end - start <= 60:
-                        valid.append({**clip, "start": start, "end": end})
-                valid.sort(key=lambda x: x["start"])
-                if not valid:
-                    st.info("Gemini did not find any valid engaging moments in this video.")
-                else:
-                    output_dir = Path("output")
-                    output_dir.mkdir(exist_ok=True)
-                    st.success(f"Gemini selected {len(valid)} engaging moments.")
-                    for i, clip in enumerate(valid, 1):
-                        out = output_dir / f"short_{i:02d}.mp4"
-                        length = clip["end"] - clip["start"]
-                        vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-                        subprocess.run([
-                            "ffmpeg", "-y", "-ss", str(clip["start"]), "-i", str(source_path),
-                            "-t", str(length), "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
-                            "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", str(out)
-                        ], check=True, capture_output=True, text=True)
-                        st.markdown(f"**Short {i} · {length:.1f} sec**")
-                        st.caption(f"{clip.get('reason', '')} · {clip.get('hook', '')}")
-                        st.video(str(out))
-                        st.download_button(f"Download Short {i}", out.read_bytes(),
-                                            file_name=out.name, mime="video/mp4", key=f"download_{i}")
-                client.files.delete(name=gemini_file.name)
-                source_path.unlink(missing_ok=True)
-            except Exception as exc:
-                st.error(f"Processing failed: {exc}")
-                st.caption("Check your Gemini API key, video format, and FFmpeg installation.")
+            response=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-2.5-flash"),
+                contents=[remote,prompt],config=types.GenerateContentConfig(response_mime_type="application/json",temperature=.2))
+            data=json.loads(response.text)
+        clips=[]
+        for c in data.get("clips",[]):
+            try:
+                a=float(c["start"]); b=float(c["end"])
+                if 0<=a<b<=duration and 8<=b-a<=60 and (not clips or a>=clips[-1]["end"]):
+                    c["start"]=a; c["end"]=b; clips.append(c)
+            except (KeyError,ValueError,TypeError): pass
+        if not clips: st.warning("Koi valid engaging moment nahi mila."); st.stop()
+        outdir=folder/"shorts"; outdir.mkdir(); results=[]; bar=st.progress(0)
+        for i,c in enumerate(clips,1):
+            out=outdir/f"short_{i:02}.mp4"
+            export(src,out,c,(w,h),layout=="Facecam upar + gameplay niche",share,burn,folder,i)
+            results.append((out,c)); bar.progress(int(i/len(clips)*100))
+        archive=folder/"ThisSkills_AutoClips.zip"
+        with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as z:
+            for out,c in results: z.write(out,out.name)
+        st.success(f"{len(results)} Shorts ready!")
+        st.download_button("Saare Shorts ZIP mein download karo",archive.read_bytes(),file_name="ThisSkills_AutoClips.zip",mime="application/zip",type="primary")
+        for i,(out,c) in enumerate(results,1):
+            st.subheader(f"Short {i} · {c['end']-c['start']:.1f} sec")
+            st.caption(str(c.get("reason",""))+" · "+str(c.get("hook","")))
+            st.video(str(out))
+            st.download_button(f"Download Short {i}",out.read_bytes(),file_name=out.name,mime="video/mp4",key=f"dl{i}")
+    except Exception as e:
+        st.error(f"Processing error: {e}")
+        st.caption("Gemini API quota/key, FFmpeg, video size aur internet check karo.")
+    finally:
+        if client and remote:
+            try: client.files.delete(name=remote.name)
+            except Exception: pass
+        shutil.rmtree(folder,ignore_errors=True)
+
+st.divider()
+st.caption("Gemini moment detection · FFmpeg editing · Original audio · No generated scenes or AI voiceover")
