@@ -34,7 +34,7 @@ Keep the API key in Streamlit Secrets only. Never commit it to GitHub or share i
 
 ## Important limitations
 
-- The app currently accepts uploaded video files. It does **not** download arbitrary YouTube URLs.
+- The app supports both local video uploads and YouTube video URLs. YouTube downloads can still fail for videos whose formats are blocked or require YouTube authorization; use a video file you own or have permission to download.
 - The stacked stream layout depends on Gemini correctly identifying distinct facecam and gameplay panels. It may not work for every overlay or moving-camera layout; use Auto 9:16 if detection fails.
 - Subtitle timing and moment selection are AI-generated and should be reviewed before publishing.
-- Large uploads need enough RAM, disk space, processing time, and Gemini API quota. Free quotas and hosting limits can apply.
+- Large uploads need enough RAM, disk space, processing time, and Gemini API quota. Free quotas and hosting limits can apply. Gemini 503/UNAVAILABLE errors mean the model service is temporarily unavailable; the app now retries and tries alternate supported Flash models, but cannot override a Google-side outage or exhausted project quota.
